@@ -103,12 +103,20 @@
     </div>
   </div>
 
+  <!-- Footer -->
+  <div class="text-center py-6 mt-8 bg-transparent">
+      <p class="text-gray-500 text-sm">
+          Created by <a href="https://www.aaronshi.cc" target="_blank" rel="noopener noreferrer" class="font-medium text-blue-600 hover:text-blue-500 transition-colors">AaronShi.cc</a>
+      </p>
+  </div>
+
   <script>
     // 狀態管理
     let filesData = [];
     let sortByTime = true;
     let map = null;
     let trackLayer = null;
+    let draggedIndex = null; // 新增：紀錄目前正在拖曳的檔案索引
 
     // DOM 元素
     const dropzone = document.getElementById('dropzone');
@@ -187,7 +195,61 @@
       
       filesData.forEach((file, index) => {
         const li = document.createElement('li');
-        li.className = 'flex items-center justify-between p-3 md:p-4 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-shadow';
+        // 加入 cursor-grab 讓游標顯示可拖曳狀態
+        li.className = 'flex items-center justify-between p-3 md:p-4 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing';
+        li.draggable = true;
+
+        // --- 拖曳事件綁定開始 ---
+        li.addEventListener('dragstart', (e) => {
+          draggedIndex = index;
+          e.dataTransfer.effectAllowed = 'move';
+          // 稍微延遲以保留拖曳殘影，並讓原位置變半透明虛線框
+          setTimeout(() => li.classList.add('opacity-40', 'border-dashed', 'border-emerald-500'), 0);
+        });
+
+        li.addEventListener('dragend', () => {
+          li.classList.remove('opacity-40', 'border-dashed', 'border-emerald-500');
+          draggedIndex = null;
+        });
+
+        li.addEventListener('dragover', (e) => {
+          e.preventDefault(); // 必須 preventDefault 才能觸發 drop
+          e.dataTransfer.dropEffect = 'move';
+        });
+
+        li.addEventListener('dragenter', (e) => {
+          e.preventDefault();
+          if (draggedIndex !== index) {
+            li.classList.add('bg-emerald-50', 'border-emerald-400'); // 拖曳進入時的視覺回饋
+          }
+        });
+
+        li.addEventListener('dragleave', (e) => {
+          // 確保離開的目標不是子元素才移除樣式，避免閃爍
+          if (!li.contains(e.relatedTarget)) {
+            li.classList.remove('bg-emerald-50', 'border-emerald-400');
+          }
+        });
+
+        li.addEventListener('drop', (e) => {
+          e.stopPropagation();
+          li.classList.remove('bg-emerald-50', 'border-emerald-400');
+          
+          if (draggedIndex !== null && draggedIndex !== index) {
+            // 如果使用者手動拖曳排序，自動關閉「依時間排序」，確保所見即所得
+            if (sortByTime) {
+              sortByTime = false;
+              sortByTimeToggle.checked = false;
+            }
+            
+            // 陣列重新排序
+            const draggedItem = filesData.splice(draggedIndex, 1)[0];
+            filesData.splice(index, 0, draggedItem);
+            
+            renderFileList();
+          }
+        });
+        // --- 拖曳事件綁定結束 ---
         
         // 上下移按鈕狀態
         const upDisabled = index === 0;
@@ -346,9 +408,9 @@
       // 5. 繪製新軌跡並縮放視野
       if (latlngs.length > 0) {
         trackLayer = L.polyline(latlngs, {
-          color: '#059669', // 使用與主題相符的翠綠色
-          weight: 4,
-          opacity: 0.8
+          color: '#ef4444', // 改為醒目的紅色，避免與地圖背景混淆
+          weight: 5,        // 稍微加粗讓軌跡更明顯
+          opacity: 0.9
         }).addTo(map);
         
         // 自動縮放地圖以完美適應整條軌跡
