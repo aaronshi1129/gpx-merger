@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GPX 軌跡合併工具</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- 引入 Leaflet CSS 與 JS (用於地圖預覽) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  
+  <style>
+    /* 自定義隱藏捲軸但可滾動，讓畫面更乾淨 */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-gray-50 p-4 md:p-8 font-sans text-gray-800">
+
+  <div class="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
+    <!-- Header -->
+    <div class="bg-emerald-600 p-6 text-white text-center">
+      <h1 class="text-2xl md:text-3xl font-bold flex items-center justify-center gap-2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-8 h-8">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+        </svg>
+        GPX 軌跡合併工具
+      </h1>
+      <p class="mt-2 text-emerald-100 opacity-90 text-sm md:text-base">
+        將多段 GPX 紀錄合併成單一連續軌跡，適合登山、騎車分段紀錄者
+      </p>
+    </div>
+
+    <div class="p-6 md:p-8">
+      <!-- Upload Area -->
+      <div id="dropzone" class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center transition-colors cursor-pointer hover:border-emerald-400 hover:bg-gray-50">
+        <input type="file" id="fileInput" multiple accept=".gpx" class="hidden" />
+        <div class="flex flex-col items-center justify-center gap-3">
+          <div class="p-4 bg-emerald-100 rounded-full text-emerald-600">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+          </div>
+          <p class="text-lg font-medium text-gray-700">點擊選擇檔案，或將 GPX 拖曳至此</p>
+          <p class="text-sm text-gray-500">支援多選檔案上傳</p>
+        </div>
+      </div>
+
+      <!-- Error Message -->
+      <div id="errorMsg" class="hidden mt-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm font-medium border border-red-200">
+      </div>
+
+      <!-- Settings -->
+      <div class="mt-6 flex items-center gap-2 p-4 bg-gray-50 rounded-lg border border-gray-100">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-500"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        <div class="flex-1">
+          <span class="font-medium text-gray-700 block">依時間自動排序軌跡點</span>
+          <span class="text-xs text-gray-500">強烈建議開啟，會自動將散亂的軌跡點依真實時間接合。</span>
+        </div>
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" id="sortByTimeToggle" class="sr-only peer" checked>
+          <div class="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+        </label>
+      </div>
+
+      <!-- File List Area -->
+      <div id="fileListContainer" class="hidden mt-8">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-600"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+            已準備合併的檔案 (<span id="fileCount">0</span>)
+          </h2>
+          <span id="sortWarning" class="hidden text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-200 flex items-center gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            目前以列表順序合併
+          </span>
+        </div>
+        
+        <ul id="fileList" class="space-y-3">
+          <!-- 檔案列表會透過 JS 動態生成在這裡 -->
+        </ul>
+
+        <!-- 地圖預覽區塊 -->
+        <div class="mt-8 mb-2">
+          <h3 class="text-md font-bold text-gray-800 flex items-center gap-2 mb-3">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-600"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>
+            合併後軌跡預覽
+          </h3>
+          <div id="mapContainer" class="h-64 md:h-96 w-full rounded-xl border border-gray-300 shadow-inner z-0 relative"></div>
+        </div>
+
+        <!-- Action Button -->
+        <button id="mergeBtn" class="mt-6 w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 text-lg active:scale-[0.98]">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          合併並下載 GPX
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // 狀態管理
+    let filesData = [];
+    let sortByTime = true;
+    let map = null;
+    let trackLayer = null;
+
+    // DOM 元素
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const errorMsgDiv = document.getElementById('errorMsg');
+    const sortByTimeToggle = document.getElementById('sortByTimeToggle');
+    const fileListContainer = document.getElementById('fileListContainer');
+    const fileListElement = document.getElementById('fileList');
+    const fileCountSpan = document.getElementById('fileCount');
+    const sortWarningSpan = document.getElementById('sortWarning');
+    const mergeBtn = document.getElementById('mergeBtn');
+
+    // 生成唯一 ID
+    const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
+
+    // 顯示錯誤訊息
+    function showError(msg) {
+      if (msg) {
+        errorMsgDiv.textContent = msg;
+        errorMsgDiv.classList.remove('hidden');
+      } else {
+        errorMsgDiv.classList.add('hidden');
+      }
+    }
+
+    // 處理選擇或拖曳的檔案
+    function processFiles(files) {
+      showError('');
+      const gpxFiles = Array.from(files).filter(file => file.name.toLowerCase().endsWith('.gpx'));
+
+      if (gpxFiles.length === 0) {
+        showError('請上傳 .gpx 格式的檔案！');
+        return;
+      }
+
+      let loadedCount = 0;
+      gpxFiles.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          filesData.push({
+            id: generateId(),
+            name: file.name,
+            size: (file.size / 1024).toFixed(2) + ' KB',
+            content: e.target.result,
+          });
+          
+          loadedCount++;
+          if (loadedCount === gpxFiles.length) {
+            renderFileList();
+          }
+        };
+        reader.readAsText(file);
+      });
+      
+      // 清空 input value 允許重複上傳同個檔案
+      fileInput.value = '';
+    }
+
+    // 更新畫面 UI
+    function renderFileList() {
+      if (filesData.length === 0) {
+        fileListContainer.classList.add('hidden');
+        return;
+      }
+
+      fileListContainer.classList.remove('hidden');
+      fileCountSpan.textContent = filesData.length;
+      
+      if (sortByTime) {
+        sortWarningSpan.classList.add('hidden');
+      } else {
+        sortWarningSpan.classList.remove('hidden');
+      }
+
+      fileListElement.innerHTML = '';
+      
+      filesData.forEach((file, index) => {
+        const li = document.createElement('li');
+        li.className = 'flex items-center justify-between p-3 md:p-4 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-shadow';
+        
+        // 上下移按鈕狀態
+        const upDisabled = index === 0;
+        const downDisabled = index === filesData.length - 1;
+        const sortButtonsHtml = sortByTime ? '' : `
+          <button onclick="moveFile(${index}, 'up')" ${upDisabled ? 'disabled' : ''} class="p-1.5 text-gray-400 hover:text-emerald-600 disabled:opacity-30 disabled:hover:text-gray-400 transition-colors" title="上移">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+          </button>
+          <button onclick="moveFile(${index}, 'down')" ${downDisabled ? 'disabled' : ''} class="p-1.5 text-gray-400 hover:text-emerald-600 disabled:opacity-30 disabled:hover:text-gray-400 transition-colors" title="下移">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+          </button>
+        `;
+
+        li.innerHTML = `
+          <div class="flex items-center gap-3 overflow-hidden">
+            <div class="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-gray-500 shrink-0 font-medium">
+              ${index + 1}
+            </div>
+            <div class="truncate">
+              <p class="font-medium text-gray-800 truncate" title="${file.name}">${file.name}</p>
+              <p class="text-xs text-gray-400">${file.size}</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            ${sortButtonsHtml}
+            <button onclick="removeFile('${file.id}')" class="p-1.5 text-gray-400 hover:text-red-500 transition-colors ml-1" title="刪除">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+            </button>
+          </div>
+        `;
+        fileListElement.appendChild(li);
+      });
+
+      // 每次更新列表後，即時更新地圖預覽
+      updateMapPreview();
+    }
+
+    // 全域函式：供 HTML 內的 onclick 呼叫
+    window.removeFile = function(id) {
+      filesData = filesData.filter(f => f.id !== id);
+      renderFileList();
+    };
+
+    window.moveFile = function(index, direction) {
+      if (direction === 'up' && index > 0) {
+        const temp = filesData[index - 1];
+        filesData[index - 1] = filesData[index];
+        filesData[index] = temp;
+      } else if (direction === 'down' && index < filesData.length - 1) {
+        const temp = filesData[index + 1];
+        filesData[index + 1] = filesData[index];
+        filesData[index] = temp;
+      }
+      renderFileList();
+    };
+
+    // 事件監聽：設定切換
+    sortByTimeToggle.addEventListener('change', (e) => {
+      sortByTime = e.target.checked;
+      renderFileList();
+    });
+
+    // 事件監聽：上傳點擊
+    dropzone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => processFiles(e.target.files));
+
+    // 事件監聽：拖曳上傳
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('border-emerald-500', 'bg-emerald-50');
+      dropzone.classList.remove('border-gray-300');
+    });
+
+    dropzone.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('border-emerald-500', 'bg-emerald-50');
+      dropzone.classList.add('border-gray-300');
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('border-emerald-500', 'bg-emerald-50');
+      dropzone.classList.add('border-gray-300');
+      if (e.dataTransfer.files.length > 0) {
+        processFiles(e.dataTransfer.files);
+      }
+    });
+
+    // 取得合併後的節點資料 (獨立成函式，供地圖預覽與最終下載共同使用)
+    function getMergedData() {
+      let allWaypoints = [];
+      let allTrackpoints = [];
+
+      filesData.forEach((fileObj) => {
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(fileObj.content, 'application/xml');
+
+        if (xmlDoc.getElementsByTagName('parsererror').length > 0) {
+          console.error('解析錯誤:', fileObj.name);
+          return;
+        }
+
+        const wpts = Array.from(xmlDoc.getElementsByTagNameNS('*', 'wpt'));
+        allWaypoints = allWaypoints.concat(wpts);
+
+        const trkpts = Array.from(xmlDoc.getElementsByTagNameNS('*', 'trkpt'));
+        allTrackpoints = allTrackpoints.concat(trkpts);
+      });
+
+      // 依照時間排序
+      if (sortByTime) {
+        allTrackpoints.sort((a, b) => {
+          const timeA = a.getElementsByTagNameNS('*', 'time')[0]?.textContent;
+          const timeB = b.getElementsByTagNameNS('*', 'time')[0]?.textContent;
+          
+          if (timeA && timeB) {
+            return new Date(timeA) - new Date(timeB);
+          }
+          return 0;
+        });
+      }
+
+      return { allWaypoints, allTrackpoints };
+    }
+
+    // 更新地圖預覽
+    function updateMapPreview() {
+      const mapContainer = document.getElementById('mapContainer');
+      if (filesData.length === 0) return;
+
+      // 1. 初始化地圖 (如果還沒初始化過)
+      if (!map) {
+        map = L.map('mapContainer').setView([23.6978, 120.9605], 7); // 預設中心點：台灣
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+      }
+
+      // 確保地圖在顯示時重新計算大小 (避免 Leaflet 灰塊 Bug)
+      setTimeout(() => map.invalidateSize(), 100);
+
+      // 2. 取得合併排序後的點位資料
+      const { allTrackpoints } = getMergedData();
+      
+      // 3. 提取座標點
+      const latlngs = allTrackpoints.map(pt => [
+        parseFloat(pt.getAttribute('lat')),
+        parseFloat(pt.getAttribute('lon'))
+      ]);
+
+      // 4. 清除舊軌跡
+      if (trackLayer) {
+        map.removeLayer(trackLayer);
+      }
+
+      // 5. 繪製新軌跡並縮放視野
+      if (latlngs.length > 0) {
+        trackLayer = L.polyline(latlngs, {
+          color: '#059669', // 使用與主題相符的翠綠色
+          weight: 4,
+          opacity: 0.8
+        }).addTo(map);
+        
+        // 自動縮放地圖以完美適應整條軌跡
+        map.fitBounds(trackLayer.getBounds(), { padding: [30, 30] });
+      }
+    }
+
+    // 核心邏輯：合併 GPX 檔案並下載
+    mergeBtn.addEventListener('click', () => {
+      if (filesData.length === 0) return;
+
+      // 直接呼叫已整理好的資料獲取函式
+      const { allWaypoints, allTrackpoints } = getMergedData();
+
+      // 建立新的 GPX DOM
+      const doc = document.implementation.createDocument('http://www.topografix.com/GPX/1/1', 'gpx', null);
+      const gpx = doc.documentElement;
+      gpx.setAttribute('version', '1.1');
+      gpx.setAttribute('creator', 'GPX Merger Web Tool');
+      gpx.setAttribute('xmlns', 'http://www.topografix.com/GPX/1/1');
+
+      // 寫入航點
+      allWaypoints.forEach((wpt) => {
+        gpx.appendChild(doc.importNode(wpt, true));
+      });
+
+      // 寫入軌跡
+      if (allTrackpoints.length > 0) {
+        const trk = doc.createElementNS('http://www.topografix.com/GPX/1/1', 'trk');
+        
+        const name = doc.createElementNS('http://www.topografix.com/GPX/1/1', 'name');
+        const dateStr = new Date().toLocaleDateString('zh-TW').replace(/\//g, '');
+        name.textContent = `合併登山軌跡_${dateStr}`;
+        trk.appendChild(name);
+
+        const trkseg = doc.createElementNS('http://www.topografix.com/GPX/1/1', 'trkseg');
+        allTrackpoints.forEach((pt) => {
+          trkseg.appendChild(doc.importNode(pt, true));
+        });
+        
+        trk.appendChild(trkseg);
+        gpx.appendChild(trk);
+      }
+
+      // 匯出與下載
+      const serializer = new XMLSerializer();
+      const xmlString = '<?xml version="1.0" encoding="UTF-8"?>\n' + serializer.serializeToString(doc);
+
+      const blob = new Blob([xmlString], { type: 'application/gpx+xml' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Merged_Track_${new Date().getTime()}.gpx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    });
+
+  </script>
+</body>
+</html>
